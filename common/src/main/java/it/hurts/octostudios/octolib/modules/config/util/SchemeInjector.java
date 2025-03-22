@@ -7,7 +7,8 @@ import it.hurts.octostudios.octolib.modules.config.cfgbuilder.scalar.ScalarEntry
 import it.hurts.octostudios.octolib.modules.config.cfgbuilder.scalar.StringEntry;
 
 public class SchemeInjector implements EntryInjector<ConfigEntry> {
-    
+    private boolean hasInvalidValues = false;
+
     @Override
     public ConfigEntry apply(ConfigEntry pattern, ConfigEntry target) {
         if (pattern == null || pattern.getNodeId() != target.getNodeId())
@@ -99,6 +100,7 @@ public class SchemeInjector implements EntryInjector<ConfigEntry> {
             try {
                 return new IntEntry(Integer.parseInt((String) object.getData()));
             } catch (NumberFormatException exception) {
+                hasInvalidValues = true;
                 return null;
             }
         
@@ -109,9 +111,11 @@ public class SchemeInjector implements EntryInjector<ConfigEntry> {
             try {
                 return new DoubleEntry(Double.parseDouble((String) object.getData()));
             } catch (NumberFormatException exception) {
+                hasInvalidValues = true;
                 return null;
             }
-        
+
+        hasInvalidValues = true;
         return null;
     }
     
@@ -119,5 +123,12 @@ public class SchemeInjector implements EntryInjector<ConfigEntry> {
         var result = tryParse(target, pattern.getTag());
         return result == null ? pattern : (ScalarEntry) result;
     }
-    
+
+    public boolean hasInvalidValues() {
+        return hasInvalidValues;
+    }
+
+    public void resetInvalidValuesFlag() {
+        hasInvalidValues = false;
+    }
 }
