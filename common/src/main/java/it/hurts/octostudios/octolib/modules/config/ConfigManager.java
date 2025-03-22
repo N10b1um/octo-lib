@@ -21,10 +21,15 @@ import net.minecraft.server.level.ServerPlayer;
 import org.apache.logging.log4j.util.Cast;
 import org.jetbrains.annotations.Nullable;
 
+import java.io.IOException;
 import java.io.StringReader;
 import java.io.StringWriter;
 import java.lang.annotation.Annotation;
 import java.lang.reflect.Modifier;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,7 +40,8 @@ public final class ConfigManager {
     private static final Map<String, OctoConfig> CONFIG_MAP = new ConcurrentHashMap<>();
     private static final Map<String, ConfigProvider> CUSTOM_CONFIG_PROVIDERS = new HashMap<>();
     private static final IdentityHashMap<Class<? extends Annotation>, Pair<AnnotationConfigFactory<?>, ConfigNameGetter<?>>> ANNOTATION_CONFIG_FACTORIES = new IdentityHashMap<>();
-    
+    private static final String BACKUPS_DIR = "OctolibBackups";
+
     static {
         BASE_PROVIDER = ConfigProviderBase.getDefault(4);
         registerConfigFactory(Config.class,
@@ -112,7 +118,7 @@ public final class ConfigManager {
         try {
             ConfigManager.reload(location);
         } catch (RuntimeException e) {
-            e.printStackTrace();
+            OctoLib.LOGGER.error(e);
         }
         
         if (config.getSide() == ConfigSide.SERVER)
@@ -124,38 +130,65 @@ public final class ConfigManager {
     }
     
     private static synchronized void reload(String location, OctoConfig config, boolean saveToFile) {
-        var provider = getConfigProvider(location);
-        
+        ConfigProvider provider = getConfigProvider(location);
+
         Object object = config.prepareData();
-        
+
+        if (provider instanceof ConfigProvider) {
+            provider.resetInvalidValuesFlag();
+        }
+
         try {
             var pattern = provider.createPattern(object);
             var data = config.getLoader().loadFiles(location, pattern, provider);
             provider.insert2ndStep(object, data);
             config.onLoadObject(object);
+
+            if (provider.hasInvalidValues()) {
+                createBackup(location);
+            }
         } catch (Exception e) {
             OctoLib.LOGGER.error("Error occurs while reading " + location + " config.");
+            createBackup(location);
             throw new RuntimeException(e);
         } finally {
             if (saveToFile)
                 config.getLoader().saveToFiles(location, Cast.cast(object), provider);
         }
     }
+
+    public static void reload(String location) {
+        var config = CONFIG_MAP.get(location);
+        reload(location, config);
+    }
+
+    public static void reload(String location, OctoConfig config) {
+        reload(location, config, true);
+    }
     
     public static synchronized void reloadStringConfig(String stringData, String location, boolean saveToFile) {
         var provider = getConfigProvider(location);
         var config = getConfig(location);
-        
+
         Object object = config.prepareData();
         StringReader reader = new StringReader(stringData);
-        
+
+        if (provider instanceof ConfigProvider) {
+            provider.resetInvalidValuesFlag();
+        }
+
         try {
             var pattern = provider.createPattern(object);
             var data = provider.load(reader, (CompoundEntry) pattern);
             provider.insert2ndStep(object, data);
             config.onLoadObject(object);
+
+            if (provider.hasInvalidValues()) {
+                createBackup(location);
+            }
         } catch (Exception e) {
             OctoLib.LOGGER.error("Error occurs while reading " + location + " config.");
+            createBackup(location);
             throw new RuntimeException(e);
         } finally {
             if (saveToFile)
@@ -198,14 +231,29 @@ public final class ConfigManager {
         Object object = config.prepareData();
         config.getLoader().saveToFiles(location, Cast.cast(object), provider);
     }
-    
-    public static void reload(String location) {
-        var config = CONFIG_MAP.get(location);
-        reload(location, config);
+
+    private static void createBackup(String location) {
+        try {
+            Path configFile = dev.architectury.platform.Platform.getConfigFolder().resolve(location + ".yaml");
+
+            if (!Files.exists(configFile)) {
+                return;
+            }
+
+            Path backupsDir = dev.architectury.platform.Platform.getConfigFolder().resolve(BACKUPS_DIR);
+            if (!Files.exists(backupsDir)) {
+                Files.createDirectories(backupsDir);
+            }
+
+            DateTimeFormatter dateTimePattern = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss");
+            String time = LocalDateTime.now().format(dateTimePattern);
+            String backupFileName = location.replace('/', '_') + "_backup_" + time + ".yaml";
+            Path backupFile = backupsDir.resolve(backupFileName);
+
+            Files.copy(configFile,backupFile);
+            OctoLib.LOGGER.info("Backup of config " + location + " was successfully created at " + backupFile);
+        } catch (IOException e) {
+            OctoLib.LOGGER.error("Failed to create backup of config " + location, e);
+        }
     }
-    
-    public static void reload(String location, OctoConfig config) {
-        reload(location, config, true);
-    }
-    
 }

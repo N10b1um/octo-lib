@@ -9,8 +9,6 @@ import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.introspector.PropertyUtils;
 
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.util.*;
@@ -149,5 +147,14 @@ public class ConfigProviderBase implements ConfigProvider {
         target.clear();
         target.putAll((Map) data);
     }
-    
+
+    public void resetInvalidValuesFlag() {
+        if (injector instanceof SchemeInjector) {
+            ((SchemeInjector) injector).resetInvalidValuesFlag();
+        }
+    }
+
+    public boolean hasInvalidValues() {
+        return injector instanceof SchemeInjector && ((SchemeInjector) injector).hasInvalidValues();
+    }
 }
